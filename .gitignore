@@ -17,4 +17,5 @@ coverage/
 Thumbs.db
 debug.log
 *.blend1
-artifacts/runtime/
+artifacts/
+jelly-site/build-report.json

@@ -7,6 +7,7 @@ import { installEarWeights } from './ears';
 import { applyMilkyLook, jellyLook, jellyLookVariant, useDepthTransport } from './look';
 import { JellyLightTransport } from './lightTransport';
 import { applyCavityLook, installCavityDepth } from './cavity';
+import { setupOpacity } from './opacity';
 import './style.css';
 
 declare global { interface Window { __JELLY_MODEL_BASE64__?: string; jellyZoo: ReturnType<typeof createApi>; } }
@@ -26,7 +27,11 @@ let pointerId: number | null = null;
 let rotation = 0, rotationTarget = 0;
 let cameraZoom = 1, zoomTarget = 1, cameraDistance = 10;
 const zoomBounds = { min: .72, max: 2.1 };
-const cameraDirection = new THREE.Vector3(-.20, .165, .98).normalize();
+const cameraHorizontal = new THREE.Vector3(-.20, 0, .98).normalize();
+const defaultElevation = Math.atan2(.165, Math.hypot(.20, .98));
+const elevationBounds = { min: .025, max: Math.PI / 2 - .015 };
+let cameraElevation = defaultElevation, elevationTarget = defaultElevation;
+const cameraDirection = new THREE.Vector3();
 const cameraTarget = new THREE.Vector3();
 const touchPointers = new Map<number, THREE.Vector2>();
 let pinchActive = false, pinchStartDistance = 0, pinchStartZoom = 1;
@@ -60,6 +65,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.setClearColor('#fbfaf9', 1);
 const actor = new THREE.Group();
 scene.add(actor);
+const opacityDepth = new THREE.Group(); opacityDepth.visible = false; actor.add(opacityDepth);
 
 function makeStudioEnvironment() {
   const studio = new THREE.Scene();
@@ -113,7 +119,10 @@ if (lightTransport) resources.push(lightTransport);
 
 const depth = deformMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));
 const distance = deformMaterial(new THREE.MeshDistanceMaterial());
-resources.push(depth, distance);
+// Visible only for translucent rendering: write the nearest deformed surface
+// to depth before colour so one mesh cannot alpha-blend itself out of order.
+const opacityDepthMaterial = deformMaterial(new THREE.MeshBasicMaterial({ colorWrite:false, depthWrite:true }));
+resources.push(depth, distance, opacityDepthMaterial);
 const gel = applyMilkyLook(deformMaterial(new THREE.MeshPhysicalMaterial({ color: jellyLook.bodyColor, metalness: 0, roughness: jellyLook.roughness, ior: 1.45, transmission: 0, transparent: false, opacity: 1, clearcoat: jellyLook.clearcoat, clearcoatRoughness: jellyLook.clearcoatRoughness, envMapIntensity: 1.0, specularIntensity: 1.0 })));
 const eyes = deformMaterial(new THREE.MeshPhysicalMaterial({ color: '#3f261b', roughness: .17, metalness: 0, transmission: 0, transparent: false, opacity: 1, ior: 1.46, clearcoat: .65, clearcoatRoughness: .11, envMapIntensity: .90 }));
 const nostril = useDepthTransport
@@ -121,6 +130,7 @@ const nostril = useDepthTransport
   : deformMaterial(new THREE.MeshPhysicalMaterial({ color: '#a47d6c', roughness: .30, metalness: 0, transmission: 0, transparent: false, opacity: 1, ior: 1.42, clearcoat: .20, clearcoatRoughness: .18, envMapIntensity: .80 }));
 if (lightTransport) { lightTransport.apply(gel); lightTransport.apply(nostril); }
 resources.push(gel, eyes, nostril);
+const opacityControl = setupOpacity(gel, nostril, eyes, softShadow.plane.material as THREE.MeshBasicMaterial, contactShadow.material as THREE.MeshBasicMaterial, opacityDepth, value => lightTransport?.setVisualOpacity(value));
 const colorInput = $<HTMLInputElement>('jelly-color');
 const originalColor = jellyLook.bodyColor;
 function setElephantColor(color: string, persist = true) {
@@ -192,6 +202,11 @@ async function loadModel() {
       const material = /eye/i.test(label) ? eyes : /nostril|interior/i.test(label) ? nostril : gel;
       if (useDepthTransport && material === nostril) installCavityDepth(geometry);
       const mesh = new THREE.Mesh(geometry, material); mesh.name = source.name;
+      if (material === eyes) mesh.renderOrder = 2;
+      if (material === gel || material === nostril) {
+        const prepass = new THREE.Mesh(geometry, opacityDepthMaterial); prepass.frustumCulled = false; prepass.renderOrder = -100;
+        opacityDepth.add(prepass);
+      }
       mesh.layers.enable(1);
       mesh.castShadow = true; mesh.receiveShadow = false; mesh.frustumCulled = false;
       mesh.customDepthMaterial = depth; mesh.customDistanceMaterial = distance;
@@ -229,6 +244,8 @@ function resize() {
   shadowNeedsUpdate = true;
 }
 function updateCamera() {
+  const horizontal = Math.cos(cameraElevation);
+  cameraDirection.set(cameraHorizontal.x * horizontal, Math.sin(cameraElevation), cameraHorizontal.z * horizontal);
   camera.position.copy(cameraTarget).addScaledVector(cameraDirection, cameraDistance / cameraZoom);
   camera.lookAt(cameraTarget); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
@@ -257,7 +274,7 @@ function setRay(event: Pick<PointerEvent, 'clientX' | 'clientY'>) {
 function setMode(next: 'squish' | 'orbit') {
   releasePointer(); mode = next;
   for (const key of ['squish', 'orbit'] as const) { const button = $('mode-' + key); button.classList.toggle('active', key === mode); button.setAttribute('aria-pressed', String(key === mode)); }
-  note.textContent = mode === 'squish' ? '按住捏一捏，松手看它回弹。' : '慢慢转个圈，看看它的另一面。';
+  note.textContent = mode === 'squish' ? '按住捏一捏，松手看它回弹。' : '上下左右拖动，换个角度看看。';
 }
 function releasePrimary(releaseCapture = true) {
   const id = pointerId;
@@ -318,8 +335,13 @@ canvas.addEventListener('pointermove', event => {
   }
   if (event.pointerId !== pointerId) return;
   moved = Math.max(moved, Math.hypot(event.clientX - pressStart.x, event.clientY - pressStart.y));
-  const dx = event.clientX - lastPointer.x;
-  if (interaction === 'orbit') rotationTarget += dx * .008;
+  const dx = event.clientX - lastPointer.x, dy = event.clientY - lastPointer.y;
+  if (interaction === 'orbit') {
+    rotationTarget += dx * .008;
+    // Drag down to look progressively from above; stop just shy of the pole
+    // so the camera's world-up remains stable without a sudden 180° roll.
+    elevationTarget = THREE.MathUtils.clamp(elevationTarget + dy * .006, elevationBounds.min, elevationBounds.max);
+  }
   else if (interaction === 'press') {
     setRay(event);
     if (raycaster.ray.intersectPlane(dragPlane, worldIntersection)) {
@@ -345,7 +367,7 @@ function pointerEnd(event: PointerEvent) {
   touchPointers.delete(event.pointerId);
   if (event.pointerId !== pointerId) return;
   if (interaction === 'press' && moved < 8 && elapsed - pressSince < .26) physics.squash.velocity += 1.15;
-  releasePointer(); note.textContent = mode === 'squish' ? '它会慢慢弹回来。' : '慢慢转个圈，看看它的另一面。';
+  releasePointer(); note.textContent = mode === 'squish' ? '它会慢慢弹回来。' : '上下左右拖动，换个角度看看。';
 }
 canvas.addEventListener('pointerup', pointerEnd);
 canvas.addEventListener('pointercancel', () => releasePointer());
@@ -359,7 +381,7 @@ canvas.addEventListener('wheel', event => {
 }, { passive: false });
 addEventListener('blur', releasePointer);
 function poke() { if (!ready) return; releasePointer(); jellyUniforms.uJellyForce.value.set(0, 0, 0); physics.poke(); note.textContent = '噗，弹一下。'; }
-function reset() { releasePointer(); physics.reset(); rotationTarget = rotation = 0; actor.rotation.y = 0; setZoom(1); shadowNeedsUpdate = true; note.textContent = mode === 'squish' ? '按住捏一捏，松手看它回弹。' : '慢慢转个圈，看看它的另一面。'; }
+function reset() { releasePointer(); physics.reset(); rotationTarget = rotation = 0; actor.rotation.y = 0; elevationTarget = cameraElevation = defaultElevation; setZoom(1); shadowNeedsUpdate = true; note.textContent = mode === 'squish' ? '按住捏一捏，松手看它回弹。' : '上下左右拖动，换个角度看看。'; }
 $('mode-squish').addEventListener('click', () => setMode('squish'));
 $('mode-orbit').addEventListener('click', () => setMode('orbit'));
 $('bounce').addEventListener('click', poke); $('reset').addEventListener('click', reset);
@@ -380,6 +402,7 @@ addEventListener('keydown', event => {
   if (event.key === '-') { event.preventDefault(); releasePointer(); setZoom(zoomTarget / 1.18); }
   if (event.key === '0') { event.preventDefault(); releasePointer(); setZoom(1); }
   if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') { event.preventDefault(); rotationTarget += event.code === 'ArrowLeft' ? -.18 : .18; }
+  if (event.code === 'ArrowUp' || event.code === 'ArrowDown') { event.preventDefault(); elevationTarget = THREE.MathUtils.clamp(elevationTarget + (event.code === 'ArrowDown' ? .12 : -.12), elevationBounds.min, elevationBounds.max); }
   if (event.code === 'Escape') releasePointer();
 });
 
@@ -395,6 +418,7 @@ function frame(now: number) {
     const angularVelocity = dt > .0001 ? (rotation - previousRotation) / dt : 0;
     physics.update(dt, angularVelocity);
     cameraZoom = physics.reducedMotion ? zoomTarget : THREE.MathUtils.lerp(cameraZoom, zoomTarget, 1 - Math.exp(-dt * 12));
+    cameraElevation = physics.reducedMotion ? elevationTarget : THREE.MathUtils.lerp(cameraElevation, elevationTarget, 1 - Math.exp(-dt * 12));
     updateCamera();
     const breath = physics.reducedMotion || interaction !== 'idle' ? 0 : Math.sin(elapsed * 1.25) * .004;
     jellyUniforms.uJellySquash.value = physics.squash.value + breath;
@@ -408,7 +432,7 @@ function frame(now: number) {
     jellyUniforms.uFootLift.value.set(...physics.support.lifts);
     contactShadow.scale.setScalar(1 + physics.squash.value * .045);
     if (shadowNeedsUpdate || (drawCount % 2 === 0 && (physics.energy > .00001 || Math.abs(rotationTarget - rotation) > .0001 || pointerId !== null))) {
-      actor.updateMatrixWorld(true); softShadow.render([floor, contactShadow]); shadowNeedsUpdate = false;
+      actor.updateMatrixWorld(true); softShadow.render([floor, contactShadow, opacityDepth]); shadowNeedsUpdate = false;
     }
     lightTransport?.render(camera,gel);
   }
@@ -423,10 +447,10 @@ function createApi() {
       sway: [physics.swayX.value, physics.swayZ.value], spinSway: physics.spinSway.value, pull: physics.pull.map(pull => pull.value), touchForce: physics.force.map(force => force.value),
       appendages: [physics.leftEar.value, physics.rightEar.value, physics.nose.value], rotation, rotationTarget,
       energy: physics.energy, pointerHeld: pointerId !== null || pinchActive, elapsed, frames: drawCount, meshCount: modelMeshes.length,
-      cameraZoom, zoomTarget, zoomBounds: { ...zoomBounds }, pinchActive, touchCount: touchPointers.size,
+      cameraZoom, zoomTarget, zoomBounds: { ...zoomBounds }, cameraElevation, elevationTarget, elevationBounds: { ...elevationBounds }, pinchActive, touchCount: touchPointers.size,
       support: physics.support.snapshot(),
       earWeights: { ...earWeights },
-      appearance: { look_revision: jellyLook.revision, variant: jellyLookVariant, scatteringApproximation: { strength: jellyLook.scatterStrength, color: jellyLook.scatterColor, lightDependent: true, source: lightTransport ? 'two measured rear softbox entry-depth maps' : 'rear softbox', thinRegions: lightTransport ? 'measured light path through deformed geometry' : 'authored ears, nose, foot pads' }, transport: lightTransport?.snapshot() ?? null, materials: [gel, eyes, nostril].map((material, index) => ({ role: ['body-and-ears', 'eyes', 'nostril'][index], color: '#' + material.color.getHexString(), emissive: '#' + material.emissive.getHexString(), emissiveIntensity: material.emissiveIntensity, transmission: material.transmission, opacity: material.opacity, transparent: material.transparent, roughness: material.roughness })) },
+      appearance: { look_revision: jellyLook.revision, variant: jellyLookVariant, visualOpacity: opacityControl.value, scatteringApproximation: { strength: lightTransport ? lightTransport.uniforms.uTransportStrength.value : jellyLook.scatterStrength, color: jellyLook.scatterColor, lightDependent: true, source: lightTransport ? 'two measured rear softbox entry-depth maps' : 'rear softbox', thinRegions: lightTransport ? 'measured light path through deformed geometry' : 'authored ears, nose, foot pads' }, transport: lightTransport?.snapshot() ?? null, materials: [gel, eyes, nostril].map((material, index) => ({ role: ['body-and-ears', 'eyes', 'nostril'][index], color: '#' + material.color.getHexString(), emissive: '#' + material.emissive.getHexString(), emissiveIntensity: material.emissiveIntensity, transmission: material.transmission, opacity: material.opacity, transparent: material.transparent, roughness: material.roughness })) },
       bounds: { height: modelHeight, width: modelWidth, depth: modelDepth }, render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
       modelScreenCenter: (() => { const point = actor.localToWorld(new THREE.Vector3(0, 1.5, .8)).project(camera); return { x: (point.x + 1) * innerWidth / 2, y: (1 - point.y) * innerHeight / 2 }; })(),
     }),

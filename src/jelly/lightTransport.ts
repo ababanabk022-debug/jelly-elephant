@@ -4,6 +4,7 @@ import { jellyLook } from './look';
 
 /** First-surface light-space transport. Empty gaps are not depth-peeled. */
 export class JellyLightTransport {
+  private readonly passMaterials = new Map<THREE.MeshPhysicalMaterial, THREE.MeshPhysicalMaterial>();
   private readonly resolution = 768;
   private readonly range = 16;
   private depth = deformMaterial(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.FrontSide }));
@@ -147,8 +148,20 @@ export class JellyLightTransport {
     const width=Math.ceil(this.screenSize.x*.5),height=Math.ceil(this.screenSize.y*.5);
     if(this.diffuseRaw.width!==width||this.diffuseRaw.height!==height){this.diffuseRaw.setSize(width,height);this.diffuseTemporary.setSize(width,height);this.diffuseResult.setSize(width,height);}
     const cameraMask=camera.layers.mask; camera.layers.set(1); this.scene.overrideMaterial=null;
-    this.uniforms.uTransportPass.value=1;this.renderer.setClearColor(0,0);this.renderer.setRenderTarget(this.diffuseRaw);this.renderer.clear();this.renderer.render(this.scene,camera);
-    this.uniforms.uTransportPass.value=0;camera.layers.mask=cameraMask;
+    // Never alpha-blend the light buffer: its alpha stores view depth for
+    // the diffusion filter. Use opaque copies for the offscreen pass.
+    const replacements: Array<{mesh:THREE.Mesh; original:THREE.MeshPhysicalMaterial}> = [];
+    this.scene.traverse(object => {
+      const mesh=object as THREE.Mesh, original=mesh.material;
+      if (!mesh.isMesh || !(original instanceof THREE.MeshPhysicalMaterial) || (!original.transparent && original.transmission<=0) || !mesh.layers.test(camera.layers)) return;
+      let pass=this.passMaterials.get(original);
+      if(!pass){pass=original.clone();pass.transmission=0;pass.transparent=false;pass.opacity=1;pass.depthWrite=true;pass.onBeforeCompile=original.onBeforeCompile;pass.customProgramCacheKey=original.customProgramCacheKey;this.passMaterials.set(original,pass);}
+      pass.color.copy(original.color);pass.roughness=original.roughness;
+      replacements.push({mesh,original});mesh.material=pass;
+    });
+    this.uniforms.uTransportPass.value=1;this.renderer.setClearColor(0,0);this.renderer.setRenderTarget(this.diffuseRaw);this.renderer.clear();
+    try { this.renderer.render(this.scene,camera); }
+    finally { replacements.forEach(({mesh,original})=>{mesh.material=original;});this.uniforms.uTransportPass.value=0;camera.layers.mask=cameraMask; }
     const distance=camera.position.distanceTo(new THREE.Vector3(0,1.25,0));
     const radiusPixels=.10*height/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2)*distance);
     this.blurMaterial.uniforms.map.value=this.diffuseRaw.texture;this.blurMaterial.uniforms.direction.value.set(radiusPixels/width,0);
@@ -157,7 +170,13 @@ export class JellyLightTransport {
     this.renderer.setRenderTarget(this.diffuseResult);this.renderer.clear();this.renderer.render(this.blurScene,this.blurCamera);
     this.renderer.setRenderTarget(target); this.renderer.setClearColor(clear, alpha); this.scene.background = background; this.scene.overrideMaterial = override; this.renders++;
   }
-  snapshot() { return { method: 'two light-space entry-depth maps; spectral attenuation; depth-aware diffusion of surface irradiance and bounded transport', resolution: this.resolution, sources: 2, diffusionWorldRadius: .10, diffusionTapsPerAxis: 17, diffuseRedistribution: .62, diffuseConversion: 'bounded 1-exp(-radiance*strength)', updatedFrames: this.renders, limitation: 'first entry depth; empty spaces are not depth-peeled', extinctionPerMetre: [3.0, 3.4, 4.6] }; }
+  snapshot() { return { effectiveScatterStrength: this.uniforms.uTransportStrength.value, method: 'two light-space entry-depth maps; spectral attenuation; depth-aware diffusion of surface irradiance and bounded transport', resolution: this.resolution, sources: 2, diffusionWorldRadius: .10, diffusionTapsPerAxis: 17, diffuseRedistribution: .62, diffuseConversion: 'bounded 1-exp(-radiance*strength)', updatedFrames: this.renders, limitation: 'first entry depth; empty spaces are not depth-peeled', extinctionPerMetre: [3.0, 3.4, 4.6] }; }
+  setVisualOpacity(opacity: number) {
+    // A more opaque jelly scatters less of the rear light through its volume.
+    // Interpolate continuously so 99% and 100% do not abruptly change look.
+    const opaque = THREE.MathUtils.smoothstep(opacity, .20, 1);
+    this.uniforms.uTransportStrength.value = THREE.MathUtils.lerp(jellyLook.scatterStrength, 2.4, opaque);
+  }
   /** Read-only debug probe: actual GPU-deformed position and light entry depths. */
   probe(camera:THREE.PerspectiveCamera,material:THREE.MeshPhysicalMaterial,x:number,y:number){
     const target=this.renderer.getRenderTarget(),background=this.scene.background,override=this.scene.overrideMaterial;
@@ -173,5 +192,5 @@ export class JellyLightTransport {
     const point=new THREE.Vector3().fromArray(position),n=new THREE.Vector3().fromArray(normal);
     return {position:point.toArray(),normal:n.toArray(),diffusedRadiance:Array.from(transport),sources:this.sources.map(source=>{const projected=point.clone().applyMatrix4(source.matrix);const buffer=new Float32Array(4);this.renderer.readRenderTargetPixels(source.target,Math.min(this.resolution-1,Math.max(0,Math.floor(projected.x*this.resolution))),Math.min(this.resolution-1,Math.max(0,Math.floor(projected.y*this.resolution))),1,1,buffer);return {entry:buffer[0],projected:projected.toArray(),path:Math.max((projected.z-buffer[0])*this.range-.018,0),normalDot:n.dot(source.direction.clone().transformDirection(camera.matrixWorldInverse))};})};
   }
-  dispose() { this.depth.dispose(); this.sources.forEach(source => source.target.dispose());this.diffuseRaw.dispose();this.diffuseTemporary.dispose();this.diffuseResult.dispose();this.quad.geometry.dispose();this.blurMaterial.dispose(); }
+  dispose() { this.depth.dispose(); this.passMaterials.forEach(material=>material.dispose());this.sources.forEach(source => source.target.dispose());this.diffuseRaw.dispose();this.diffuseTemporary.dispose();this.diffuseResult.dispose();this.quad.geometry.dispose();this.blurMaterial.dispose(); }
 }

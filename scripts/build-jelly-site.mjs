@@ -8,7 +8,7 @@ const dist=path.resolve(root,process.env.JELLY_DIST_DIR??'dist-jelly'),site=path
 const model=path.resolve(root,process.env.JELLY_SITE_MODEL??'assets/blender/jelly-elephant/jelly-elephant-v25-smooth.glb');
 const glb=await fs.readFile(model);
 if(glb.toString('ascii',0,4)!=='glTF'||glb.readUInt32LE(8)!==glb.length)throw new Error('The selected model is not a complete GLB.');
-let html=await fs.readFile(path.join(dist,'jelly-elephant.html'),'utf8');
+let html=(await fs.readFile(path.join(dist,'jelly-elephant.html'),'utf8')).replace(/\r\n?/g,'\n');
 if(!/<script type="module"/.test(html))throw new Error('Vite output missing; run npm run build first.');
 html=html.replace('<head>','<head>\n  <meta name="human-zoo-jelly-local-site" content="v1">\n  <script>window.__JELLY_LOOK_VARIANT__="depth-scatter";</script>');
 await fs.mkdir(path.join(site,'models'),{recursive:true});

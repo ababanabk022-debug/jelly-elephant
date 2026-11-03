@@ -20,6 +20,11 @@
       <input id="jelly-color" type="color" value="#bda8a7" aria-label="选择小象颜色" title="选择小象颜色" />
       <button id="jelly-color-reset" type="button" aria-label="恢复小象原色" title="恢复原色">原色</button>
     </div>
+    <div class="opacity-control" role="group" aria-label="小象不透明度">
+      <label for="jelly-opacity">不透明度</label>
+      <input id="jelly-opacity" type="range" min="20" max="100" step="1" value="100" aria-valuetext="100% 不透明" />
+      <output id="jelly-opacity-value" for="jelly-opacity">100%</output>
+    </div>
     <div class="interaction-note" aria-live="polite" id="interaction-note">按住捏一捏，松手看它回弹。</div>
     <div id="loading" class="loading" role="status"><span class="loading-dot"></span><span id="loading-text">小象正在慢慢成形…</span><button id="retry" hidden>再试一次</button></div>
     <footer class="studio-footer">
