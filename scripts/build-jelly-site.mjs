@@ -1,0 +1,20 @@
+/** Assemble the local static website from an already completed Vite build. */
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const dist=path.resolve(root,process.env.JELLY_DIST_DIR??'dist-jelly'),site=path.resolve(root,process.env.JELLY_SITE_DIR??'jelly-site');
+const model=path.resolve(root,process.env.JELLY_SITE_MODEL??'assets/blender/jelly-elephant/jelly-elephant-v25-smooth.glb');
+const glb=await fs.readFile(model);
+if(glb.toString('ascii',0,4)!=='glTF'||glb.readUInt32LE(8)!==glb.length)throw new Error('The selected model is not a complete GLB.');
+let html=await fs.readFile(path.join(dist,'jelly-elephant.html'),'utf8');
+if(!/<script type="module"/.test(html))throw new Error('Vite output missing; run npm run build first.');
+html=html.replace('<head>','<head>\n  <meta name="human-zoo-jelly-local-site" content="v1">\n  <script>window.__JELLY_LOOK_VARIANT__="depth-scatter";</script>');
+await fs.mkdir(path.join(site,'models'),{recursive:true});
+await fs.cp(path.join(dist,'assets'),path.join(site,'assets'),{recursive:true});
+await fs.writeFile(path.join(site,'index.html'),html);
+await fs.writeFile(path.join(site,'models','jelly-elephant.glb'),glb);
+const report={model,modelSHA256:createHash('sha256').update(glb).digest('hex'),indexSHA256:createHash('sha256').update(html).digest('hex'),look:'depth-scatter',site,layout:'static HTML, JavaScript, CSS and GLB files',runtimeServerRequired:true};
+await fs.writeFile(path.join(site,'build-report.json'),JSON.stringify(report,null,2));
+console.log(JSON.stringify(report,null,2));

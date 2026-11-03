@@ -1,0 +1,20 @@
+# Local dependencies and build output
+node_modules/
+dist/
+dist-jelly/
+build/
+coverage/
+
+# Local secrets and editor state
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+debug.log
+*.blend1
+artifacts/runtime/

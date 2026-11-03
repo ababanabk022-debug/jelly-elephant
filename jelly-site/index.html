@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta name="human-zoo-jelly-local-site" content="v1">
+  <script>window.__JELLY_LOOK_VARIANT__="depth-scatter";</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#fbfaf9" />
+  <meta name="description" content="一只软乎乎的果冻小象。按住、拖动，松手看它慢慢回弹。" />
+  <title>果冻小象 · 软乎乎的白色影棚</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='13' fill='%23f1e2db'/%3E%3Cellipse cx='20' cy='22' rx='11' ry='12' fill='%23cbbec7'/%3E%3Cellipse cx='8' cy='20' rx='6' ry='9' fill='%23d9cdd4'/%3E%3Cellipse cx='32' cy='20' rx='6' ry='9' fill='%23d9cdd4'/%3E%3C/svg%3E" />
+  <script type="module" crossorigin src="/assets/jellyStudio-BmcGboK_.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
+  <link rel="modulepreload" crossorigin href="/assets/three-core-DBmAgxmr.js">
+  <link rel="modulepreload" crossorigin href="/assets/three-renderer-CQUZ33Od.js">
+  <link rel="modulepreload" crossorigin href="/assets/three-addons-F2nxNlky.js">
+  <link rel="stylesheet" crossorigin href="/assets/jellyStudio-CEEwVpDA.css">
+</head>
+<body>
+  <main id="jelly-app">
+    <canvas id="jelly-canvas" aria-label="可以按压、旋转、滚轮或双指缩放的三维果冻小象" tabindex="0"></canvas>
+    <header class="studio-header">
+      <h1 class="wordmark" style="margin:0"><span class="mark" aria-hidden="true"></span><span>果冻小象</span></h1>
+      <p>留一点时间，软乎乎地发个呆。</p>
+    </header>
+    <div class="color-control" role="group" aria-label="小象颜色">
+      <label for="jelly-color">颜色</label>
+      <input id="jelly-color" type="color" value="#bda8a7" aria-label="选择小象颜色" title="选择小象颜色" />
+      <button id="jelly-color-reset" type="button" aria-label="恢复小象原色" title="恢复原色">原色</button>
+    </div>
+    <div class="interaction-note" aria-live="polite" id="interaction-note">按住捏一捏，松手看它回弹。</div>
+    <div id="loading" class="loading" role="status"><span class="loading-dot"></span><span id="loading-text">小象正在慢慢成形…</span><button id="retry" hidden>再试一次</button></div>
+    <footer class="studio-footer">
+      <div class="toolbar" aria-label="小象互动工具">
+        <div class="mode-switch" role="group" aria-label="互动方式">
+          <button id="mode-squish" class="mode active" aria-pressed="true" title="按压小象"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 12V5a2 2 0 0 1 4 0v7m0-4a2 2 0 0 1 4 0v5m0-2a2 2 0 0 1 4 0v5c0 4-3 6-7 6-2 0-4-1-5-3l-5-6a2 2 0 0 1 3-2l2 2"/></svg><span>捏一捏</span></button>
+          <button id="mode-orbit" class="mode" aria-pressed="false" title="拖动旋转小象"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 0 1 14-5l2 3M20 3v5h-5M20 14a8 8 0 0 1-14 5l-2-3M4 21v-5h5"/></svg><span>转个圈</span></button>
+        </div>
+        <span class="toolbar-rule" aria-hidden="true"></span>
+        <button id="bounce" class="bounce" title="空格键也可以轻弹"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M7 13c0-4 2-7 5-7s5 3 5 7c0 2-2 3-5 3s-5-1-5-3ZM12 2v1M3 8l2 1M21 8l-2 1"/></svg><span>轻弹一下</span></button>
+        <button id="reset" class="reset" aria-label="复位小象" title="复位 · R"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 1 1 0 6M4 3v6h6"/></svg></button>
+        <div class="zoom-controls" role="group" aria-label="镜头缩放">
+          <button id="zoom-out" aria-label="缩小" title="缩小 · −">−</button>
+          <button id="zoom-reset" aria-label="复位镜头缩放" title="默认距离 · 0"><span id="zoom-label">100%</span></button>
+          <button id="zoom-in" aria-label="放大" title="放大 · +">+</button>
+        </div>
+        <div class="softness-control"><label for="softness">柔软度</label><input id="softness" type="range" min="0" max="100" value="40" aria-valuetext="软软的"/><output id="softness-label" for="softness">软软的</output></div>
+      </div>
+      <p class="keyboard-hint">滚轮 / 双指缩放 <span>·</span> 空格轻弹 <span>·</span> R 复位</p>
+    </footer>
+  </main>
+</body>
+</html>

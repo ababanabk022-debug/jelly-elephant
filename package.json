@@ -1,0 +1,15 @@
+{
+  "name": "jelly-elephant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "scripts": {
+    "build": "vite build --config vite.jelly.config.mjs && node scripts/build-jelly-site.mjs",
+    "start": "node scripts/serve-jelly-site.mjs",
+    "test": "node --experimental-strip-types --test tests/jelly-support.test.ts",
+    "test:browser": "node scripts/check-jelly-local-site.mjs"
+  },
+  "dependencies": { "three": "0.180.0" },
+  "devDependencies": { "playwright": "1.60.0", "vite": "7.3.2" }
+}
